@@ -22,7 +22,6 @@ class MSGraph_Admin
         );
 
         add_action("load-$hook", array($this, 'handle_tab_actions'));
-
         add_action('wp_dashboard_setup', array($this, 'add_dashboard_widget'));
     }
 
@@ -123,7 +122,6 @@ class MSGraph_Admin
         $new_input['enable_view_log'] = isset($input['enable_view_log']) ? 1 : 0;
         $new_input['delete_on_uninstall'] = isset($input['delete_on_uninstall']) ? 1 : 0;
 
-        // Clear token cache on save
         delete_option('msgraph_tokens');
 
         return $new_input;
@@ -197,7 +195,6 @@ class MSGraph_Admin
 
             <?php if ($active_tab == 'settings') : ?>
                 <?php
-                // Simple connection check indicator
                 $status_html = '<span class="dashicons dashicons-warning" style="color:orange;"></span> Not Connected';
                 $error_html = '';
                 if (! empty($options['client_id']) && ! empty($options['client_secret'])) {
@@ -226,22 +223,6 @@ class MSGraph_Admin
                     submit_button('Save Settings');
                     ?>
                 </form>
-
-                <style>
-                    .msgraph-log-viewer {
-                        background: #fff;
-                        border: 1px solid #ccd0d4;
-                        padding: 20px;
-                        margin-top: 20px;
-                        border-left: 4px solid #72aee6;
-                    }
-
-                    .msgraph-log-viewer h4 {
-                        margin-top: 0;
-                        border-bottom: 1px solid #eee;
-                        padding-bottom: 10px;
-                    }
-                </style>
 
                 <hr>
                 <h2>Send Test Email</h2>
@@ -316,7 +297,6 @@ class MSGraph_Admin
                             </div>
                         </div>
                     </div>
-                    <br class="clear">
                 </div>
             <?php endif; ?>
         </div>
@@ -367,9 +347,6 @@ class MSGraph_Admin
 <?php
     }
 
-    /**
-     * Clear all logs.
-     */
     public static function clear_all_logs()
     {
         if (! current_user_can('manage_options')) {
@@ -389,10 +366,7 @@ class MSGraph_Admin
         if (isset($_GET['action']) && $_GET['action'] == 'resend' && isset($_GET['log_id'])) {
             $log_id = intval($_GET['log_id']);
             check_admin_referer('msgraph_resend_log_' . $log_id);
-
             $this->resend_email($log_id);
-
-            // Fix: Explicitly redirect back to the logs tab with a clean URL
             $redirect_url = admin_url('options-general.php?page=ms-graph-mailer&tab=logs');
             wp_safe_redirect($redirect_url);
             exit;
@@ -409,28 +383,18 @@ class MSGraph_Admin
 
     private function handle_post_actions($auth)
     {
-        // Send Test Email Action
         if (isset($_POST['send_test_email']) && check_admin_referer('msgraph_test_email', 'msgraph_test_nonce')) {
             $to = sanitize_email($_POST['test_email_to']);
-            $subject = 'Test Email from MS Graph Mailer';
-            $message = 'This is a test email sent via Microsoft Graph API integration based on Client Credentials.';
-
-            // Try to get token first to report specific auth error immediately
-            $token = $auth->get_access_token();
-            if (! $token) {
+            if (! $auth->get_access_token()) {
                 $last_err = get_transient('msgraph_last_auth_error');
-                $msg = $last_err ? 'Authentication Failed: ' . $last_err : 'Authentication Failed. Verify Client ID, Secret, and Tenant ID.';
-                add_settings_error('msgraph_mailer_settings', 'auth_fail', $msg, 'error');
+                add_settings_error('msgraph_mailer_settings', 'auth_fail', $last_err ?: 'Auth Failed', 'error');
                 return;
             }
 
-            // Force use of our mailer logic
-            $sent = wp_mail($to, $subject, $message);
-
-            if ($sent) {
+            if (wp_mail($to, 'Test Email from MS Graph Mailer', 'This is a test email.')) {
                 add_settings_error('msgraph_mailer_settings', 'test_email_success', 'Test email sent successfully!', 'updated');
             } else {
-                add_settings_error('msgraph_mailer_settings', 'test_email_fail', 'Failed to send test email. Check server error logs or plugin email logs.', 'error');
+                add_settings_error('msgraph_mailer_settings', 'test_email_fail', 'Failed to send test email.', 'error');
             }
         }
     }
@@ -438,10 +402,7 @@ class MSGraph_Admin
     private function resend_email($log_id)
     {
         $log = MSGraph_Logger::get_log($log_id);
-        if (! $log) {
-            add_settings_error('msgraph_mailer_settings', 'resend_error', 'Log entry not found.', 'error');
-            return;
-        }
+        if (! $log) return;
 
         $to = $log->recipient;
         $subject = $log->subject;
@@ -449,32 +410,9 @@ class MSGraph_Admin
         $headers = maybe_unserialize($log->headers);
         $attachments = maybe_unserialize($log->attachments);
 
-        // Add log_id to attributes so Sender knows to update instead of insert
-        $atts = array(
-            'msgraph_log_id' => $log_id
-        );
-
-        // wp_mail filter will be triggered, Sender will pick up the atts if we use a hack 
-        // or we can pass it via headers. Let's use a global or a filter-based approach 
-        // but wp_mail only accepts specific arguments.
-        // BETTER: We can pass it in the $headers array and parse it out in Sender.
         if (! is_array($headers)) $headers = array();
         $headers[] = 'X-MSGraph-Log-ID: ' . $log_id;
 
-        $sent = wp_mail($to, $subject, $message, $headers, $attachments);
-
-        if ($sent) {
-            $this->add_persisted_notice('resend_success', 'Email resend triggered. Check logs for final status.', 'updated');
-        } else {
-            $this->add_persisted_notice('resend_error', 'Failed to trigger resend.', 'error');
-        }
-    }
-
-    private function add_persisted_notice($code, $message, $type = 'updated')
-    {
-        $notices = get_transient('msgraph_admin_notices');
-        if (! is_array($notices)) $notices = array();
-        $notices[] = array('code' => $code, 'message' => $message, 'type' => $type);
-        set_transient('msgraph_admin_notices', $notices, 30);
+        wp_mail($to, $subject, $message, $headers, $attachments);
     }
 }

@@ -6,6 +6,14 @@ Designed for reliability and transparency, it provides a full suite of tools to 
 
 ---
 
+## 📋 Requirements
+
+- **WordPress**: 5.8 or higher
+- **PHP**: 7.4 or higher
+- **Microsoft Professional Subscription**: Business or Enterprise plan with access to Azure Portal.
+
+---
+
 ## ✨ Key Features
 
 - **Reliable Sending**: Bypass typical server mail restrictions by using Microsoft's professional infrastructure.

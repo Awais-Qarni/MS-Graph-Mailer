@@ -60,9 +60,11 @@ class MSGraph_Sender
         $cc_recipients = isset($processed_headers['cc']) ? $this->format_recipients($processed_headers['cc']) : array();
         $bcc_recipients = isset($processed_headers['bcc']) ? $this->format_recipients($processed_headers['bcc']) : array();
 
-        // Content Type
-        $content_type = isset($processed_headers['content-type']) ? $processed_headers['content-type'] : 'text/plain';
-        $is_html = stripos($content_type, 'html') !== false;
+        // Content Type detection
+        $content_type = isset($processed_headers['content-type']) ? $processed_headers['content-type'] : apply_filters('wp_mail_content_type', 'text/plain');
+
+        // Final check: if the message starts with HTML tags, treat it as HTML even if header is missing
+        $is_html = (stripos($content_type, 'html') !== false) || (stripos(trim($message), '<!DOCTYPE') === 0) || (stripos(trim($message), '<html') === 0);
         $body_type = $is_html ? 'HTML' : 'Text';
 
         // Prepare Attachments

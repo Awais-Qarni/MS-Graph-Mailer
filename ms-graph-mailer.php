@@ -3,7 +3,7 @@
 /**
  * Plugin Name: MS Graph Mailer
  * Plugin URI: https://github.com/Awais-Qarni/MS-Graph-Mailer.git
- * Description: Sends your WordPress emails reliably using Microsoft 365 (this is not change). Includes a dashboard to track, view, and resend messages easily.
+ * Description: Sends your WordPress emails reliably using Microsoft 365. Includes a dashboard to track, view, and resend messages easily.
  * Version: 2.1.2
  * Author: Muhammad Awais
  * Author URI: mailto:reachoutawais@gmail.com

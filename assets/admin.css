@@ -99,7 +99,7 @@
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 	gap: 12px;
-	margin: 0 0 20px;
+	margin: 20px 0;
 }
 
 .msgm-stat {

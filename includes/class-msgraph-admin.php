@@ -341,8 +341,8 @@ class MSGraph_Admin
                     }
                 </style>
 
-                <?php if (isset($_GET['view_log_id']) && (int)get_option($this->option_name)['enable_view_log']) :
-                    $log = MSGraph_Logger::get_log((int)$_GET['view_log_id']);
+                <?php if (isset($_GET['view_log_id']) && ! empty($options['enable_view_log'])) :
+                    $log = MSGraph_Logger::get_log((int) $_GET['view_log_id']);
                     if ($log) : ?>
                         <div class="msgraph-log-viewer" style="margin-bottom: 20px;">
                             <h4>Viewing Email Content (ID: <?php echo esc_html($log->id); ?>)</h4>
@@ -375,10 +375,6 @@ class MSGraph_Admin
             <?php endif; ?>
         </div>
         <?php
-
-        if (current_user_can('manage_options')) {
-            $this->handle_post_actions($auth);
-        }
     }
 
     public function render_dashboard_widget()
@@ -427,14 +423,22 @@ class MSGraph_Admin
             return;
         }
         global $wpdb;
-        $table_name = $wpdb->prefix . 'msgraph_email_logs';
-        $wpdb->query("TRUNCATE TABLE $table_name");
+        $table_name = MSGraph_Logger::table();
+        $wpdb->query("DELETE FROM $table_name");
+        MSGraph_Logger::flush_stats_cache();
     }
 
     public function handle_tab_actions()
     {
         if (! current_user_can('manage_options')) {
             return;
+        }
+
+        if (isset($_POST['send_test_email'])) {
+            check_admin_referer('msgraph_test_email', 'msgraph_test_nonce');
+            $this->handle_test_email();
+            wp_safe_redirect(admin_url('options-general.php?page=ms-graph-mailer'));
+            exit;
         }
 
         if (isset($_GET['action']) && $_GET['action'] == 'resend' && isset($_GET['log_id'])) {
@@ -449,44 +453,116 @@ class MSGraph_Admin
         if (isset($_GET['action']) && $_GET['action'] == 'clear_logs') {
             check_admin_referer('msgraph_clear_logs');
             self::clear_all_logs();
+            $this->queue_notice('logs_cleared', __('All email logs were deleted.', 'ms-graph-mailer'), 'success');
             $redirect_url = admin_url('options-general.php?page=ms-graph-mailer&tab=logs');
             wp_safe_redirect($redirect_url);
             exit;
         }
     }
 
-    private function handle_post_actions($auth)
+    /**
+     * Send the test message and queue a notice describing what happened.
+     */
+    private function handle_test_email()
     {
-        if (isset($_POST['send_test_email']) && check_admin_referer('msgraph_test_email', 'msgraph_test_nonce')) {
-            $to = sanitize_email($_POST['test_email_to']);
-            if (! $auth->get_access_token()) {
-                $last_err = get_transient('msgraph_last_auth_error');
-                add_settings_error('msgraph_mailer_settings', 'auth_fail', $last_err ?: 'Auth Failed', 'error');
-                return;
-            }
+        $to = isset($_POST['test_email_to']) ? sanitize_email(wp_unslash($_POST['test_email_to'])) : '';
 
-            if (wp_mail($to, 'Test Email from MS Graph Mailer', 'This is a test email.')) {
-                add_settings_error('msgraph_mailer_settings', 'test_email_success', 'Test email sent successfully!', 'updated');
-            } else {
-                add_settings_error('msgraph_mailer_settings', 'test_email_fail', 'Failed to send test email.', 'error');
-            }
+        if (! is_email($to)) {
+            $this->queue_notice('test_email_fail', __('Enter a valid email address to send the test to.', 'ms-graph-mailer'), 'error');
+            return;
         }
+
+        $auth = new MSGraph_Auth();
+        if (! $auth->get_access_token()) {
+            $last_err = get_transient('msgraph_last_auth_error');
+            $this->queue_notice('auth_fail', $last_err ? $last_err : __('Authentication failed.', 'ms-graph-mailer'), 'error');
+            return;
+        }
+
+        // wp_mail() now returns the real outcome, so this reflects whether
+        // Microsoft Graph actually accepted the message.
+        $sent = wp_mail(
+            $to,
+            __('Test Email from MS Graph Mailer', 'ms-graph-mailer'),
+            __('This is a test email. If you are reading it, MS Graph Mailer is configured correctly.', 'ms-graph-mailer')
+        );
+
+        if ($sent) {
+            $this->queue_notice(
+                'test_email_success',
+                sprintf(
+                    /* translators: %s: recipient email address. */
+                    __('Test email sent to %s.', 'ms-graph-mailer'),
+                    $to
+                ),
+                'success'
+            );
+            return;
+        }
+
+        $this->queue_notice(
+            'test_email_fail',
+            __('The test email failed. See the Email Logs tab for the error returned by Microsoft Graph.', 'ms-graph-mailer'),
+            'error'
+        );
+    }
+
+    /**
+     * Store a notice so it survives the redirect that follows an action.
+     */
+    private function queue_notice($code, $message, $type = 'success')
+    {
+        $notices = get_transient('msgraph_admin_notices');
+        if (! is_array($notices)) {
+            $notices = array();
+        }
+
+        $notices[] = array('code' => $code, 'message' => $message, 'type' => $type);
+
+        set_transient('msgraph_admin_notices', $notices, MINUTE_IN_SECONDS);
     }
 
     private function resend_email($log_id)
     {
         $log = MSGraph_Logger::get_log($log_id);
-        if (! $log) return;
+        if (! $log) {
+            $this->queue_notice('resend_missing', __('That log entry no longer exists.', 'ms-graph-mailer'), 'error');
+            return;
+        }
 
-        $to = $log->recipient;
-        $subject = $log->subject;
-        $message = $log->body;
-        $headers = maybe_unserialize($log->headers);
-        $attachments = maybe_unserialize($log->attachments);
+        $headers     = MSGraph_Logger::decode_column($log->headers);
+        $attachments = MSGraph_Logger::decode_column($log->attachments);
 
-        if (! is_array($headers)) $headers = array();
-        $headers[] = 'X-MSGraph-Log-ID: ' . $log_id;
+        if ('' === (string) $log->body && ! (int) MSGraph_Settings::get('store_body', 1)) {
+            $this->queue_notice(
+                'resend_no_body',
+                __('This message was logged without its content, so it cannot be resent. Enable "Store Email Content" to allow resending.', 'ms-graph-mailer'),
+                'warning'
+            );
+            return;
+        }
 
-        wp_mail($to, $subject, $message, $headers, $attachments);
+        // Tag the resend so the sender updates this row instead of adding one.
+        $headers[] = 'X-MSGraph-Log-ID: ' . (int) $log_id;
+
+        $sent = wp_mail($log->recipient, $log->subject, $log->body, $headers, $attachments);
+
+        if ($sent) {
+            $this->queue_notice(
+                'resend_success',
+                sprintf(
+                    /* translators: %s: recipient email address. */
+                    __('Message resent to %s.', 'ms-graph-mailer'),
+                    $log->recipient
+                ),
+                'success'
+            );
+        } else {
+            $this->queue_notice(
+                'resend_failed',
+                __('The resend failed. The log entry has been updated with the error.', 'ms-graph-mailer'),
+                'error'
+            );
+        }
     }
 }

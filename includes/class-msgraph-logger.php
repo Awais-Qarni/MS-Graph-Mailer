@@ -330,6 +330,40 @@ class MSGraph_Logger
     }
 
     /**
+     * Convert a stored datetime into a real UTC timestamp.
+     *
+     * Rows are written with current_time('mysql'), i.e. site-local time.
+     * mysql2date('U', ...) would read that as UTC and wp_date() would then
+     * apply the offset a second time, so parse it in the site's timezone.
+     *
+     * @return int|false
+     */
+    public static function to_timestamp($mysql_date)
+    {
+        if (empty($mysql_date) || '0000-00-00 00:00:00' === $mysql_date) {
+            return false;
+        }
+
+        $datetime = date_create_immutable($mysql_date, wp_timezone());
+
+        return $datetime ? $datetime->getTimestamp() : false;
+    }
+
+    /**
+     * Format a stored datetime using the site's date and time settings.
+     */
+    public static function format_date($mysql_date)
+    {
+        $timestamp = self::to_timestamp($mysql_date);
+
+        if (! $timestamp) {
+            return (string) $mysql_date;
+        }
+
+        return wp_date(get_option('date_format') . ' ' . get_option('time_format'), $timestamp);
+    }
+
+    /**
      * Invalidate the cached statistics.
      */
     public static function flush_stats_cache()

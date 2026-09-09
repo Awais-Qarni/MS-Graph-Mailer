@@ -17,6 +17,12 @@ class MSGraph_Auth
      */
     private static $request_token = null;
 
+    /**
+     * Set once a token request has failed, so a bulk send does not hammer
+     * Microsoft with one doomed token request per message.
+     */
+    private static $request_failed = false;
+
     public function __construct($client_id = null, $client_secret = null, $tenant_id = null)
     {
         // Arguments stay supported for back-compat, but the settings accessor
@@ -34,6 +40,10 @@ class MSGraph_Auth
         // 1. Check current request cache
         if (self::$request_token !== null) {
             return self::$request_token;
+        }
+
+        if (self::$request_failed) {
+            return false;
         }
 
         // 2. Check cached token in DB
@@ -54,6 +64,8 @@ class MSGraph_Auth
     private function request_new_token()
     {
         if (empty($this->client_id) || empty($this->client_secret) || empty($this->tenant_id)) {
+            self::$request_failed = true;
+            set_transient('msgraph_last_auth_error', __('Client ID, Client Secret and Tenant ID are all required.', 'ms-graph-mailer'), 300);
             return false;
         }
 
@@ -75,8 +87,9 @@ class MSGraph_Auth
 
         if (is_wp_error($response)) {
             $err = $response->get_error_message();
-            error_log('MS Graph Auth Error: ' . $err);
+            self::log_error($err);
             set_transient('msgraph_last_auth_error', 'WP Error: ' . $err, 300);
+            self::$request_failed = true;
             return false;
         }
 
@@ -86,8 +99,9 @@ class MSGraph_Auth
         if (isset($data['error'])) {
             $err_desc = isset($data['error_description']) ? $data['error_description'] : 'No description';
             $full_err = $data['error'] . ': ' . $err_desc;
-            error_log('MS Graph Auth Error: ' . $full_err);
+            self::log_error($full_err);
             set_transient('msgraph_last_auth_error', $full_err, 300);
+            self::$request_failed = true;
             return false;
         }
 
@@ -97,7 +111,8 @@ class MSGraph_Auth
             return $data['access_token'];
         }
 
-        set_transient('msgraph_last_auth_error', 'Unknown Error. Response Body: ' . substr($body_content, 0, 200), 300);
+        self::$request_failed = true;
+        set_transient('msgraph_last_auth_error', 'Unknown error. Response body: ' . substr($body_content, 0, 200), 300);
         return false;
     }
 
@@ -124,7 +139,19 @@ class MSGraph_Auth
      */
     public static function clear_token()
     {
-        self::$request_token = null;
+        self::$request_token  = null;
+        self::$request_failed = false;
         delete_option('msgraph_tokens');
+        delete_transient('msgraph_last_auth_error');
+    }
+
+    /**
+     * Error messages go to the PHP log only when debug logging is on.
+     */
+    private static function log_error($message)
+    {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('MS Graph Mailer auth error: ' . $message);
+        }
     }
 }

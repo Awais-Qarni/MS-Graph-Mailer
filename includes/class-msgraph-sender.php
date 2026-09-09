@@ -314,7 +314,9 @@ class MSGraph_Sender
     {
         $this->record($log_id, $status, $error, $atts);
 
-        error_log('MS Graph Mailer: ' . $error);
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('MS Graph Mailer: ' . $error);
+        }
 
         // Core fires this from wp_mail(); pre_wp_mail short-circuits before it
         // ever runs, so the plugin has to fire it itself.
@@ -371,7 +373,7 @@ class MSGraph_Sender
         $recipient_array = array();
 
         if (! is_array($to)) {
-            $to = explode(',', (string) $to);
+            $to = self::split_address_list((string) $to);
         }
 
         foreach ($to as $recipient) {
@@ -401,6 +403,51 @@ class MSGraph_Sender
         }
 
         return $recipient_array;
+    }
+
+    /**
+     * Split a comma-separated address list.
+     *
+     * A plain explode(',') breaks on the comma inside a quoted display name
+     * such as '"Doe, Jane" <jane@example.com>', which loses the recipient, so
+     * commas inside quotes or angle brackets are ignored.
+     *
+     * @return string[]
+     */
+    private static function split_address_list($list)
+    {
+        $addresses = array();
+        $current   = '';
+        $in_quotes = false;
+        $in_angle  = false;
+        $length    = strlen($list);
+
+        for ($i = 0; $i < $length; $i++) {
+            $char = $list[$i];
+
+            if ('\\' === $char && $in_quotes && $i + 1 < $length) {
+                $current .= $char . $list[++$i];
+                continue;
+            }
+
+            if ('"' === $char) {
+                $in_quotes = ! $in_quotes;
+            } elseif (! $in_quotes && '<' === $char) {
+                $in_angle = true;
+            } elseif (! $in_quotes && '>' === $char) {
+                $in_angle = false;
+            } elseif (',' === $char && ! $in_quotes && ! $in_angle) {
+                $addresses[] = $current;
+                $current = '';
+                continue;
+            }
+
+            $current .= $char;
+        }
+
+        $addresses[] = $current;
+
+        return $addresses;
     }
 
     private function parse_headers($headers)

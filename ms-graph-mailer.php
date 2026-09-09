@@ -23,6 +23,7 @@ define('MS_GRAPH_MAILER_PATH', plugin_dir_path(__FILE__));
 define('MS_GRAPH_MAILER_URL', plugin_dir_url(__FILE__));
 
 // Includes
+require_once MS_GRAPH_MAILER_PATH . 'includes/class-msgraph-settings.php';
 require_once MS_GRAPH_MAILER_PATH . 'includes/class-msgraph-logger.php';
 require_once MS_GRAPH_MAILER_PATH . 'includes/class-msgraph-mailer-core.php';
 require_once MS_GRAPH_MAILER_PATH . 'includes/class-msgraph-auth.php';

@@ -8,6 +8,11 @@ require_once 'class-msgraph-log-list-table.php';
 class MSGraph_Admin
 {
 
+    /**
+     * Stand-in rendered in the secret field when a secret is stored.
+     */
+    const SECRET_PLACEHOLDER = '__msgm_unchanged__';
+
     private $option_group = 'msgraph_mailer_options';
     private $option_name = 'msgraph_mailer_settings';
 
@@ -93,6 +98,20 @@ class MSGraph_Admin
         );
 
         add_settings_field(
+            'store_body',
+            'Store Email Content',
+            array($this, 'checkbox_field_callback'),
+            'ms-graph-mailer',
+            'msgraph_settings_section',
+            array(
+                'field'   => 'store_body',
+                'default' => 1,
+                'label'   => 'Keep a copy of each message body in the log.',
+                'help'    => 'Bodies can contain password-reset links and personal data. Turning this off improves privacy, but "Resend" will no longer be able to reproduce the message.',
+            )
+        );
+
+        add_settings_field(
             'enable_view_log',
             'Enable Viewing Email Content',
             array($this, 'checkbox_field_callback'),
@@ -113,16 +132,34 @@ class MSGraph_Admin
 
     public function sanitize_settings($input)
     {
+        $existing  = get_option($this->option_name);
+        $existing  = is_array($existing) ? $existing : array();
         $new_input = array();
+
         if (isset($input['client_id'])) $new_input['client_id'] = sanitize_text_field($input['client_id']);
-        if (isset($input['client_secret'])) $new_input['client_secret'] = sanitize_text_field($input['client_secret']);
         if (isset($input['tenant_id'])) $new_input['tenant_id'] = sanitize_text_field($input['tenant_id']);
         if (isset($input['from_email'])) $new_input['from_email'] = sanitize_email($input['from_email']);
+        if (isset($input['from_name'])) $new_input['from_name'] = sanitize_text_field($input['from_name']);
+
+        // The secret is never rendered back into the page, so an unchanged
+        // field arrives as the placeholder. Treat that as "leave as-is".
+        $submitted_secret = isset($input['client_secret']) ? trim($input['client_secret']) : '';
+        if ('' === $submitted_secret || self::SECRET_PLACEHOLDER === $submitted_secret) {
+            if (isset($existing['client_secret'])) {
+                $new_input['client_secret'] = $existing['client_secret'];
+            }
+        } else {
+            $new_input['client_secret'] = sanitize_text_field($submitted_secret);
+        }
+
         if (isset($input['log_retention'])) $new_input['log_retention'] = absint($input['log_retention']);
-        $new_input['enable_view_log'] = isset($input['enable_view_log']) ? 1 : 0;
+        $new_input['enable_view_log']     = isset($input['enable_view_log']) ? 1 : 0;
+        $new_input['store_body']          = isset($input['store_body']) ? 1 : 0;
         $new_input['delete_on_uninstall'] = isset($input['delete_on_uninstall']) ? 1 : 0;
 
-        delete_option('msgraph_tokens');
+        // Credentials may have changed; force a fresh token on the next send.
+        MSGraph_Auth::clear_token();
+        MSGraph_Settings::flush_cache();
 
         return $new_input;
     }
@@ -134,6 +171,10 @@ class MSGraph_Admin
 
     public function text_field_callback($args)
     {
+        if (MSGraph_Settings::is_constant($args['field'])) {
+            $this->render_constant_notice($args['field']);
+            return;
+        }
         $options = get_option($this->option_name);
         $val = isset($options[$args['field']]) ? $options[$args['field']] : '';
         echo '<input type="text" id="' . esc_attr($args['field']) . '" name="' . esc_attr($this->option_name . '[' . $args['field'] . ']') . '" value="' . esc_attr($val) . '" class="regular-text" />';
@@ -141,9 +182,39 @@ class MSGraph_Admin
 
     public function password_field_callback($args)
     {
-        $options = get_option($this->option_name);
-        $val = isset($options[$args['field']]) ? $options[$args['field']] : '';
-        echo '<input type="password" id="' . esc_attr($args['field']) . '" name="' . esc_attr($this->option_name . '[' . $args['field'] . ']') . '" value="' . esc_attr($val) . '" class="regular-text" />';
+        $field = $args['field'];
+
+        if (MSGraph_Settings::is_constant($field)) {
+            $this->render_constant_notice($field);
+            return;
+        }
+
+        // The stored secret is deliberately never written into the markup.
+        // A saved secret is represented by a placeholder; submitting it
+        // unchanged leaves the stored value alone.
+        $has_value = '' !== MSGraph_Settings::get($field);
+
+        echo '<input type="password" id="' . esc_attr($field) . '" name="' . esc_attr($this->option_name . '[' . $field . ']') . '"'
+            . ' value="' . ($has_value ? esc_attr(self::SECRET_PLACEHOLDER) : '') . '"'
+            . ' autocomplete="new-password" class="regular-text" />';
+
+        if ($has_value) {
+            echo '<p class="description">' . esc_html__('A secret is saved. Leave this field untouched to keep it, or paste a new secret to replace it.', 'ms-graph-mailer') . '</p>';
+        }
+    }
+
+    /**
+     * Shown in place of an input when a value is locked by wp-config.php.
+     */
+    private function render_constant_notice($field)
+    {
+        echo '<p class="msgm-locked-field"><span class="dashicons dashicons-lock"></span> '
+            . sprintf(
+                /* translators: %s: PHP constant name. */
+                esc_html__('Defined by the %s constant in wp-config.php.', 'ms-graph-mailer'),
+                '<code>' . esc_html(MSGraph_Settings::constant_name($field)) . '</code>'
+            )
+            . '</p>';
     }
 
     public function number_field_callback($args)
@@ -157,9 +228,17 @@ class MSGraph_Admin
     public function checkbox_field_callback($args)
     {
         $options = get_option($this->option_name);
-        $val = isset($options[$args['field']]) ? (int)$options[$args['field']] : 0;
+        $default = isset($args['default']) ? (int)$args['default'] : 0;
+        $val = isset($options[$args['field']]) ? (int)$options[$args['field']] : $default;
         $label = isset($args['label']) ? $args['label'] : '';
+
+        echo '<label for="' . esc_attr($args['field']) . '">';
         echo '<input type="checkbox" id="' . esc_attr($args['field']) . '" name="' . esc_attr($this->option_name . '[' . $args['field'] . ']') . '" value="1" ' . checked(1, $val, false) . ' /> ' . esc_html($label);
+        echo '</label>';
+
+        if (! empty($args['help'])) {
+            echo '<p class="description">' . esc_html($args['help']) . '</p>';
+        }
     }
 
     public function display_plugin_setup_page()
@@ -176,12 +255,7 @@ class MSGraph_Admin
         settings_errors('msgraph_mailer_settings');
 
         $options = get_option($this->option_name);
-
-        $auth = new MSGraph_Auth(
-            isset($options['client_id']) ? $options['client_id'] : '',
-            isset($options['client_secret']) ? $options['client_secret'] : '',
-            isset($options['tenant_id']) ? $options['tenant_id'] : ''
-        );
+        $auth = new MSGraph_Auth();
 
         $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'settings';
 ?>
@@ -197,7 +271,7 @@ class MSGraph_Admin
                 <?php
                 $status_html = '<span class="dashicons dashicons-warning" style="color:orange;"></span> Not Connected';
                 $error_html = '';
-                if (! empty($options['client_id']) && ! empty($options['client_secret'])) {
+                if (MSGraph_Settings::get('client_id') && MSGraph_Settings::get('client_secret')) {
                     $token = $auth->get_access_token();
                     if ($token) {
                         $status_html = '<span class="dashicons dashicons-yes" style="color:green;"></span> Connected (Token Valid)';

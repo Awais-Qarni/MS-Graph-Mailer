@@ -17,11 +17,13 @@ class MSGraph_Auth
      */
     private static $request_token = null;
 
-    public function __construct($client_id, $client_secret, $tenant_id)
+    public function __construct($client_id = null, $client_secret = null, $tenant_id = null)
     {
-        $this->client_id     = $client_id;
-        $this->client_secret = $client_secret;
-        $this->tenant_id     = $tenant_id;
+        // Arguments stay supported for back-compat, but the settings accessor
+        // is authoritative so wp-config.php constants always win.
+        $this->client_id     = null === $client_id ? MSGraph_Settings::get('client_id') : $client_id;
+        $this->client_secret = null === $client_secret ? MSGraph_Settings::get('client_secret') : $client_secret;
+        $this->tenant_id     = null === $tenant_id ? MSGraph_Settings::get('tenant_id') : $tenant_id;
     }
 
     /**
@@ -99,11 +101,30 @@ class MSGraph_Auth
         return false;
     }
 
+    /**
+     * Persist the token.
+     *
+     * Stored with autoload disabled: this is a live bearer token and must not
+     * be pulled into alloptions on every front-end request.
+     */
     private function save_tokens($token_data)
     {
-        if (isset($token_data['expires_in'])) {
-            $token_data['expires_at'] = time() + intval($token_data['expires_in']);
-        }
-        update_option($this->token_option_name, $token_data);
+        $expires_in = isset($token_data['expires_in']) ? intval($token_data['expires_in']) : 3600;
+
+        $stored = array(
+            'access_token' => $token_data['access_token'],
+            'expires_at'   => time() + $expires_in,
+        );
+
+        update_option($this->token_option_name, $stored, false);
+    }
+
+    /**
+     * Forget the cached token, in memory and in the database.
+     */
+    public static function clear_token()
+    {
+        self::$request_token = null;
+        delete_option('msgraph_tokens');
     }
 }

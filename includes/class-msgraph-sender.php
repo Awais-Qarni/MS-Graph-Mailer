@@ -6,6 +6,33 @@ if (! defined('ABSPATH')) {
 class MSGraph_Sender
 {
 
+    /**
+     * Record the outcome of a send.
+     *
+     * New sends create a row; resends update the row they originated from.
+     * The message body is only persisted when the "Store Email Content"
+     * setting is enabled.
+     */
+    private function record($log_id, $status, $error, $atts)
+    {
+        if ($log_id) {
+            MSGraph_Logger::update_log_with_result($log_id, $status, $error);
+            return $log_id;
+        }
+
+        $store_body = (int) MSGraph_Settings::get('store_body', 1);
+
+        return MSGraph_Logger::log(
+            isset($atts['to']) ? $atts['to'] : '',
+            isset($atts['subject']) ? $atts['subject'] : '',
+            $status,
+            $error,
+            $store_body && isset($atts['message']) ? $atts['message'] : '',
+            $store_body && isset($atts['headers']) ? $atts['headers'] : array(),
+            $store_body && isset($atts['attachments']) ? $atts['attachments'] : array()
+        );
+    }
+
     public function send_email($return, $atts)
     {
 
@@ -16,15 +43,10 @@ class MSGraph_Sender
         $headers     = isset($atts['headers']) ? $atts['headers'] : array();
         $attachments = isset($atts['attachments']) ? $atts['attachments'] : array();
 
-        // Get Settings
-        $options = get_option('msgraph_mailer_settings');
-        $auth = new MSGraph_Auth(
-            isset($options['client_id']) ? $options['client_id'] : '',
-            isset($options['client_secret']) ? $options['client_secret'] : '',
-            isset($options['tenant_id']) ? $options['tenant_id'] : ''
-        );
-
-        $from_email = isset($options['from_email']) ? $options['from_email'] : '';
+        // Credentials resolve through MSGraph_Settings so wp-config.php
+        // constants take precedence over the options table.
+        $auth = new MSGraph_Auth();
+        $from_email = MSGraph_Settings::get('from_email');
         $log_id = isset($atts['msgraph_log_id']) ? intval($atts['msgraph_log_id']) : false;
 
         // Process Headers early to detect resends
@@ -37,21 +59,13 @@ class MSGraph_Sender
         $log_status_failed  = $log_id ? 'retried_failed' : 'failed';
 
         if (empty($from_email)) {
-            if ($log_id) {
-                MSGraph_Logger::update_log_with_result($log_id, $log_status_failed, '"From Email" setting is missing.');
-            } else {
-                MSGraph_Logger::log($to, $subject, $log_status_failed, '"From Email" setting is missing.', $message, $headers, $attachments);
-            }
+            $this->record($log_id, $log_status_failed, '"From Email" setting is missing.', $atts);
             return true;
         }
 
         $access_token = $auth->get_access_token();
         if (! $access_token) {
-            if ($log_id) {
-                MSGraph_Logger::update_log_with_result($log_id, $log_status_failed, 'Failed to get access token.');
-            } else {
-                MSGraph_Logger::log($to, $subject, $log_status_failed, 'Failed to get access token.', $message, $headers, $attachments);
-            }
+            $this->record($log_id, $log_status_failed, 'Failed to get access token.', $atts);
             return true;
         }
 
@@ -80,11 +94,7 @@ class MSGraph_Sender
 
                     if ($file_size > $max_size) {
                         $error_msg = sprintf('Attachment "%s" exceeds 10MB limit. Skipping send.', basename($file_path));
-                        if ($log_id) {
-                            MSGraph_Logger::update_log_with_result($log_id, $log_status_failed, $error_msg);
-                        } else {
-                            MSGraph_Logger::log($to, $subject, $log_status_failed, $error_msg, $message, $headers, $attachments);
-                        }
+                        $this->record($log_id, $log_status_failed, $error_msg, $atts);
                         return true;
                     }
 
@@ -138,26 +148,14 @@ class MSGraph_Sender
 
 
         if (is_wp_error($response)) {
-            if ($log_id) {
-                MSGraph_Logger::update_log_with_result($log_id, $log_status_failed, $response->get_error_message());
-            } else {
-                MSGraph_Logger::log($to, $subject, $log_status_failed, $response->get_error_message(), $message, $headers, $attachments);
-            }
+            $this->record($log_id, $log_status_failed, $response->get_error_message(), $atts);
         } else {
             $code = wp_remote_retrieve_response_code($response);
             if ($code >= 200 && $code < 300) {
-                if ($log_id) {
-                    MSGraph_Logger::update_log_with_result($log_id, $log_status_success, '');
-                } else {
-                    MSGraph_Logger::log($to, $subject, $log_status_success, '', $message, $headers, $attachments);
-                }
+                $this->record($log_id, $log_status_success, '', $atts);
             } else {
                 $body = wp_remote_retrieve_body($response);
-                if ($log_id) {
-                    MSGraph_Logger::update_log_with_result($log_id, $log_status_failed, "API Error $code: $body");
-                } else {
-                    MSGraph_Logger::log($to, $subject, $log_status_failed, "API Error $code: $body", $message, $headers, $attachments);
-                }
+                $this->record($log_id, $log_status_failed, "API Error $code: $body", $atts);
             }
         }
 

@@ -1,4 +1,8 @@
 <?php
+if (! defined('ABSPATH')) {
+    exit;
+}
+
 if (! class_exists('WP_List_Table')) {
     require_once ABSPATH . 'wp-admin/includes/class-wp-list-table.php';
 }
@@ -105,13 +109,17 @@ class MSGraph_Log_List_Table extends WP_List_Table
         $per_page = 20;
         $current_page = $this->get_pagenum();
 
-        $orderby = (! empty($_GET['orderby'])) ? sanitize_text_field($_GET['orderby']) : 'created_at';
-        $order   = (! empty($_GET['order'])) ? sanitize_text_field($_GET['order']) : 'DESC';
-
-        // Safety check for orderby columns
-        $allowed_sort = array('created_at', 'status', 'recipient', 'subject');
-        if (! in_array($orderby, $allowed_sort)) {
+        // Both fragments are interpolated into SQL, so both must come from a
+        // fixed whitelist. sanitize_text_field() does not neutralise SQL.
+        $orderby = isset($_GET['orderby']) ? sanitize_key(wp_unslash($_GET['orderby'])) : 'created_at';
+        $allowed_sort = array('created_at', 'status', 'recipient', 'subject', 'retry_count');
+        if (! in_array($orderby, $allowed_sort, true)) {
             $orderby = 'created_at';
+        }
+
+        $order = 'DESC';
+        if (isset($_GET['order']) && 'asc' === strtolower(sanitize_key(wp_unslash($_GET['order'])))) {
+            $order = 'ASC';
         }
 
         $total_items = $wpdb->get_var("SELECT COUNT(id) FROM $table_name");

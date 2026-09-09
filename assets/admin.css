@@ -1,0 +1,278 @@
+/**
+ * MS Graph Mailer — admin styles.
+ *
+ * Built on core WordPress admin tokens so the plugin inherits the active
+ * colour scheme and stays legible in both light and dark admin themes.
+ */
+
+/* ---------- Layout ---------- */
+
+.msgm-wrap .msgm-columns {
+	display: grid;
+	grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+	gap: 24px;
+	align-items: start;
+	margin-top: 20px;
+}
+
+@media screen and (max-width: 960px) {
+	.msgm-wrap .msgm-columns {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+.msgm-panel {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+	padding: 4px 20px 16px;
+	margin-bottom: 20px;
+	box-shadow: 0 1px 1px rgba(0, 0, 0, .04);
+}
+
+.msgm-panel h2,
+.msgm-panel h3 {
+	font-size: 14px;
+	margin: 16px 0 4px;
+	padding-bottom: 10px;
+	border-bottom: 1px solid #f0f0f1;
+}
+
+.msgm-panel .form-table th {
+	padding-left: 0;
+	width: 200px;
+}
+
+/* ---------- Connection status ---------- */
+
+.msgm-status {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	padding: 16px 20px;
+	border: 1px solid #c3c4c7;
+	border-left-width: 4px;
+	border-radius: 4px;
+	background: #fff;
+	margin-top: 20px;
+}
+
+.msgm-status--ok      { border-left-color: #00a32a; }
+.msgm-status--error   { border-left-color: #d63638; }
+.msgm-status--warning { border-left-color: #dba617; }
+
+.msgm-status .dashicons {
+	font-size: 22px;
+	width: 22px;
+	height: 22px;
+	flex: 0 0 auto;
+	margin-top: 1px;
+}
+
+.msgm-status--ok .dashicons      { color: #00a32a; }
+.msgm-status--error .dashicons   { color: #d63638; }
+.msgm-status--warning .dashicons { color: #dba617; }
+
+.msgm-status-body { flex: 1 1 auto; min-width: 0; }
+
+.msgm-status-title {
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 1.4;
+	margin: 0;
+}
+
+.msgm-status-detail {
+	margin: 4px 0 0;
+	color: #50575e;
+}
+
+.msgm-status-detail code {
+	display: inline-block;
+	max-width: 100%;
+	overflow-wrap: anywhere;
+}
+
+/* ---------- Stat cards ---------- */
+
+.msgm-stats {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+	gap: 12px;
+	margin: 0 0 20px;
+}
+
+.msgm-stat {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+	padding: 14px 16px;
+}
+
+.msgm-stat-label {
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: .04em;
+	color: #646970;
+	margin: 0 0 6px;
+}
+
+.msgm-stat-value {
+	font-size: 24px;
+	font-weight: 400;
+	line-height: 1.2;
+	margin: 0;
+	color: #1d2327;
+}
+
+.msgm-stat-meta {
+	margin: 6px 0 0;
+	font-size: 12px;
+	color: #646970;
+}
+
+.msgm-stat-meta .msgm-failed { color: #d63638; font-weight: 600; }
+.msgm-stat-meta .msgm-ok     { color: #00a32a; font-weight: 600; }
+
+/* ---------- Status pills ---------- */
+
+.msgm-pill {
+	display: inline-block;
+	padding: 2px 9px;
+	border-radius: 10px;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1.6;
+	white-space: nowrap;
+}
+
+.msgm-pill--success { background: #edfaef; color: #00652a; box-shadow: inset 0 0 0 1px #b8e6c4; }
+.msgm-pill--failed  { background: #fcf0f1; color: #a4292c; box-shadow: inset 0 0 0 1px #f0b3b5; }
+.msgm-pill--neutral { background: #f0f0f1; color: #50575e; box-shadow: inset 0 0 0 1px #dcdcde; }
+
+.msgm-retry-note {
+	display: block;
+	margin-top: 3px;
+	font-size: 11px;
+	color: #646970;
+}
+
+.msgm-error-text {
+	display: block;
+	margin: 6px 0 0;
+	max-width: 46em;
+	color: #a4292c;
+	font-size: 12px;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}
+
+/* ---------- Log viewer ---------- */
+
+.msgm-log-viewer {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-left: 4px solid #2271b1;
+	border-radius: 4px;
+	padding: 16px 20px;
+	margin: 20px 0;
+}
+
+.msgm-log-viewer h2 {
+	margin-top: 0;
+	font-size: 14px;
+}
+
+.msgm-log-meta {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+	gap: 4px 24px;
+	margin: 0 0 12px;
+	padding: 0 0 12px;
+	border-bottom: 1px solid #f0f0f1;
+}
+
+.msgm-log-meta div { font-size: 13px; overflow-wrap: anywhere; }
+.msgm-log-meta strong { color: #50575e; }
+
+.msgm-log-body {
+	background: #f6f7f7;
+	border: 1px solid #dcdcde;
+	border-radius: 3px;
+	padding: 16px;
+	max-height: 420px;
+	overflow: auto;
+}
+
+.msgm-log-body > *:first-child { margin-top: 0; }
+.msgm-log-body > *:last-child  { margin-bottom: 0; }
+
+/* ---------- Misc ---------- */
+
+.msgm-locked-field {
+	margin: 4px 0;
+	color: #50575e;
+}
+
+.msgm-locked-field .dashicons {
+	font-size: 16px;
+	width: 16px;
+	height: 16px;
+	vertical-align: text-bottom;
+	color: #646970;
+}
+
+.msgm-checklist {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	counter-reset: msgm-step;
+}
+
+.msgm-checklist li {
+	position: relative;
+	padding: 0 0 12px 28px;
+	counter-increment: msgm-step;
+	font-size: 13px;
+	line-height: 1.6;
+}
+
+.msgm-checklist li::before {
+	content: counter(msgm-step);
+	position: absolute;
+	left: 0;
+	top: 1px;
+	width: 20px;
+	height: 20px;
+	border-radius: 50%;
+	background: #f0f0f1;
+	color: #50575e;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 20px;
+	text-align: center;
+}
+
+.msgm-danger-zone { border-left: 4px solid #d63638; }
+
+/* ---------- Dashboard widget ---------- */
+
+#msgraph_mailer_stats_widget .msgm-stats {
+	grid-template-columns: repeat(3, 1fr);
+	gap: 8px;
+	margin-bottom: 12px;
+}
+
+#msgraph_mailer_stats_widget .msgm-stat { padding: 10px 12px; }
+#msgraph_mailer_stats_widget .msgm-stat-value { font-size: 20px; }
+
+#msgraph_mailer_stats_widget .msgm-widget-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin: 0;
+	padding-top: 12px;
+	border-top: 1px solid #f0f0f1;
+}
